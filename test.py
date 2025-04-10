@@ -1,4 +1,5 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers.models.llama.modeling_llama import LlamaForCausalLM, LlamaDecoderLayer, LlamaMLP
 import torch
 import json
 from pydantic import BaseModel
@@ -11,7 +12,14 @@ class TestCase(BaseModel):
 
 color_prompts = [
     lambda obj: f"In a single word, the color that most associated with {obj}s is",
-    lambda obj: f"The color of {obj} is usually",
+    lambda obj: f"In a single word, the color that is most associated with {obj}s is",
+    lambda obj: f"In a single word, the color that is the most associated with {obj}s is",
+    lambda obj: f"In a single word, the color that is the most associated with {obj} is",
+    lambda obj: f"In a single word, the color that's most associated with {obj}s is",
+    lambda obj: f"In a single word, the color that most associated with {obj} is",
+    lambda obj: f"The color most associated with {obj}, in a single word:",
+    lambda obj: f"The color most strongly associated with {obj}, in a single word:",
+    lambda obj: f"The color most associated with {obj},"
 ]
 
 color_cases = [
@@ -44,7 +52,7 @@ color_cases = [
     TestCase(object="ocean", answer="blue"),
     TestCase(object="sky", answer="blue"),
     TestCase(object="amethyst", answer="purple"),
-    TestCase(object="nature", answer="purple"),
+    TestCase(object="nature", answer="green"),
     TestCase(object="denim", answer="blue"),
     TestCase(object="dandelion", answer="yellow"),
     TestCase(object="fog", answer="gray"),
@@ -60,7 +68,10 @@ def evaluate(prompts: list[Callable[[str], str]], cases: list[TestCase], attempt
     checkpoint = "HuggingFaceTB/SmolLM2-360M"
     device = "cuda" # for GPU usage or "cpu" for CPU usage
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
-    model = AutoModelForCausalLM.from_pretrained(checkpoint).to(device)
+    model: LlamaForCausalLM = AutoModelForCausalLM.from_pretrained(checkpoint).to(device)
+    layer: LlamaDecoderLayer = model.model.layers[0]
+    mlp: LlamaMLP = layer.mlp
+    
     
     results = {}
     per_object_stats = defaultdict(int)  # Track per-object stats
@@ -97,6 +108,7 @@ def evaluate(prompts: list[Callable[[str], str]], cases: list[TestCase], attempt
             prompt_res[test.object] = success
             
         avg = round(sum(prompt_res.values()) / len(prompt_res.values()), 2)
+        print(f"Prompt: {prompt('<OBJ>')}, Success rate: {avg}")
         prompt_res["avg"] = avg
         
         if avg > best:
@@ -123,4 +135,4 @@ def evaluate(prompts: list[Callable[[str], str]], cases: list[TestCase], attempt
     }
 
 if __name__ == "__main__":
-    evaluate(color_prompts, color_cases, attempts=50)
+    evaluate(color_prompts, color_cases, attempts=30)
