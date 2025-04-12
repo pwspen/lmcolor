@@ -94,7 +94,7 @@ if __name__ == "__main__":
 
     cases = [ # Prompts to compare similarity
         template("gold"),
-        "I thoroughly enjoy the taste of bananas, they're quite"
+        template("banana")
     ]
 
     parser = argparse.ArgumentParser(description="Compute hidden state similarity between prompts")
