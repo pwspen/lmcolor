@@ -86,13 +86,15 @@ def compute_group_similarities(hiddens: dict[str, list[torch.Tensor]]):
     return similarity_matrix, group_names
 
 if __name__ == "__main__":
-    test_models = ["Qwen/Qwen2-1.5B", "HuggingFaceTB/SmolLM2-360M", "HuggingFaceTB/SmolLM2-1.7B", "meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-3B", "google/gemma-3-1b-pt"]
+    test_models = ["Qwen/Qwen2-1.5B", "HuggingFaceTB/SmolLM2-360M", "HuggingFaceTB/SmolLM2-1.7B", "meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-3B"]
+    # "google/gemma-3-1b-pt"
+    # Gemma is weird and doesn't look the same as any of the above models
 
     template = lambda obj: f"The color most associated with {obj}, in a single word:"
 
     cases = [ # Prompts to compare similarity
         template("gold"),
-        template("banana")
+        "I thoroughly enjoy the taste of bananas, they're quite"
     ]
 
     parser = argparse.ArgumentParser(description="Compute hidden state similarity between prompts")
