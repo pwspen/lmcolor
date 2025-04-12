@@ -95,8 +95,8 @@ if __name__ == "__main__":
     prompt = lambda obj: f"The color most associated with {obj}, in a single word:"
 
     cases = [
-        prompt("crow"),
-        prompt("raven"),
+        prompt("gold"),
+        prompt("banana"),
     ]
 
     for model in test_models:
@@ -120,7 +120,8 @@ if __name__ == "__main__":
             avgs.append(self_avg)
         plt.scatter(range(len(avgs)), avgs, label=model.split("/")[-1])
         plt.plot(range(len(avgs)), avgs, '-', alpha=0.7)
+    plt.title('\n'.join([f"P{n}: {case}" for n, case in enumerate(cases)]))
     plt.legend()
     plt.xlabel("Layer")
-    plt.ylabel("Average In-Group Cosine Similarity")
+    plt.ylabel("Average Cosine Similarity")
     plt.show()
