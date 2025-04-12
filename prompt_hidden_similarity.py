@@ -94,9 +94,9 @@ if __name__ == "__main__":
 
     prompt = lambda obj: f"The color most associated with {obj}, in a single word:"
 
-    cases = [
+    cases = [ # Prompts to compare similarity
         prompt("gold"),
-        prompt("banana"),
+        prompt("banana")
     ]
 
     for model in test_models:
