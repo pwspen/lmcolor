@@ -3,12 +3,12 @@ from transformers.models.llama.modeling_llama import LlamaForCausalLM, LlamaDeco
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import argparse
+from adjustText import adjust_text
 
 
- 
-
-def gen_token_with_hiddens(model: str, cases: list[str], device: str = "cuda", verbose=False) -> tuple[list[torch.Tensor], str]: # [hiddens, new_token]
+def gen_token_with_hiddens(model: str, cases: dict[str, str], device: str = "cuda", verbose=False) -> tuple[dict[str, list[torch.Tensor]], dict[str, str]]: # [hiddens, new_token]
     tokenizer = AutoTokenizer.from_pretrained(model)
     model = AutoModelForCausalLM.from_pretrained(model).to(device)
     # assert isinstance(model, LlamaForCausalLM), f"Model must be a LlamaForCausalLM instance instead of {type(model)}"
@@ -17,13 +17,14 @@ def gen_token_with_hiddens(model: str, cases: list[str], device: str = "cuda", v
     target_model_type = LlamaForCausalLM
     
     hiddens = {}
-    
-    for text in cases:
+    toks = {}
+
+    for key, text in cases.items():
         input_ids = tokenizer.encode(text, return_tensors="pt").to(device)
         if verbose:
             print(f"Input IDs for {model=}, {text=}: {input_ids}")
         
-        hiddens[text] = []
+        hiddens[key] = []
 
         with torch.no_grad():
             outputs = model.generate(
@@ -40,12 +41,13 @@ def gen_token_with_hiddens(model: str, cases: list[str], device: str = "cuda", v
             except AttributeError:
                 raise ValueError(f"Model hidden state not in expected format (expecting {target_model_type} format)")
 
-            hiddens[text].append(all_layers_hidden)
+            hiddens[key].append(all_layers_hidden)
             
             tok = outputs.sequences[0, -1].unsqueeze(0)
             tok = tokenizer.decode(tok, skip_special_tokens=True)
+            toks[key] = tok
 
-    return (hiddens, tok)
+    return (hiddens, toks)
 
 def compute_group_similarities(hiddens: dict[str, list[torch.Tensor]]):
     # hiddens: {name: [[layer1, ...], [[layer1, ...], ...]}
@@ -82,56 +84,124 @@ def compute_group_similarities(hiddens: dict[str, list[torch.Tensor]]):
                     sim = F.cosine_similarity(a, b, dim=2).mean().item()
                     
                     similarity_matrix[layer, i, j] = sim
+                    similarity_matrix[layer, j, i] = sim
                 
     return similarity_matrix, group_names
 
+pairs = {
+    'emerald': 'green',
+    'strawberry': 'red',
+    'lemon': 'yellow',
+    'ruby': 'red',
+    'grass': 'green',
+    'carrot': 'orange',
+    'banana': 'yellow',
+    'pumpkin': 'orange',
+    'cherry': 'red',
+    'tomato': 'red',
+    'gold': 'yellow',
+    'mustard': 'yellow',
+    'yolk': 'yellow',
+    'blood': 'red',
+    'snow': 'white',
+    'peace': 'white',
+    'rage': 'red',
+    'sapphire': 'blue',
+    'lime': 'green',
+    'ivory': 'white',
+    'jade': 'green',
+    'rose': 'red',
+    'ocean': 'blue',
+    'sky': 'blue',
+    'nature': 'green',
+    'denim': 'blue',
+    'dandelion': 'yellow',
+    'frog': 'green',
+    'sunflower': 'yellow',
+    'brick': 'red',
+    'wheat': 'yellow',
+    'tangerine': 'orange'
+}
+
 if __name__ == "__main__":
-    test_models = ["Qwen/Qwen2-1.5B", "HuggingFaceTB/SmolLM2-360M", "HuggingFaceTB/SmolLM2-1.7B", "meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-3B"]
+    test_models = ["HuggingFaceTB/SmolLM2-360M", "meta-llama/Llama-3.2-1B", "HuggingFaceTB/SmolLM2-1.7B", "Qwen/Qwen2-1.5B", "meta-llama/Llama-3.2-3B"]
     # "google/gemma-3-1b-pt"
     # Gemma is weird and doesn't look the same as any of the above models
 
-    template = lambda obj: f"The color most associated with {obj}, in a single word:"
+    template = lambda obj, query: f"The {query} most associated with {obj}, in a single word:"
+    # template = lambda obj, query: f"In a single word, {obj} is most associated with the {query}:"    
 
-    cases = [ # Prompts to compare similarity
-        template("gold"),
-        template("banana")
-    ]
-
-    parser = argparse.ArgumentParser(description="Compute hidden state similarity between prompts")
-    parser.add_argument("--prompts", nargs="+", default=None)
-    args = parser.parse_args()
-    if args.prompts is not None:
-        cases = args.prompts
-
-    if len(cases) < 2:
-        raise ValueError("At least 2 prompts required")
-    
-    if len(cases) > 2:
-        print("Warning: results are less meaningful for n_prompts > 2\n\n")
-    
     for model in test_models:
-        hiddens, tok = gen_token_with_hiddens(model=model, cases=cases)
-        sim_matrix, names = compute_group_similarities(hiddens)
-        sim_mat_dim = len(cases)
-        avgs = []
-        for layer in range(len(sim_matrix)):
-            # This takes the upper triangle of the similarity matrix and takes mean
-            # Representing the average similarity across all prompt pairs
-            # So the number is most meaningful for cases = 2
-            # (because it's a single number instead of average of 3 or more similarities)
-            # (2 cases -> 1 similarity, 3 cases => 3 similarities)
-            # 
-            triu_indices = torch.triu_indices(sim_mat_dim, sim_mat_dim, offset=1)
+        try:
+            cases = {object: template(object, "color") for object, color in pairs.items()}
+            hiddens, toks = gen_token_with_hiddens(model=model, cases=cases)
+            sim_matrix, names = compute_group_similarities(hiddens)
+            sim_mat_dim = len(cases)
 
-            # len = (cases^2 - cases) / 2
-            sims = sim_matrix[layer][triu_indices[0], triu_indices[1]]
-            
-            self_avg = sims.mean().item()
-            avgs.append(self_avg)
-        plt.scatter(range(len(avgs)), avgs, label=model.split("/")[-1])
-        plt.plot(range(len(avgs)), avgs, '-', alpha=0.7)
-    plt.title('\n'.join([f"P{n}: {case}" for n, case in enumerate(cases)]))
-    plt.legend()
-    plt.xlabel("Layer")
-    plt.ylabel("Average Cosine Similarity")
-    plt.show()
+            results = {}
+            layer_count = len(sim_matrix)
+            object_names = list(cases.keys())
+
+            for i, obj1 in enumerate(object_names):
+                results[obj1] = {}
+                for j, obj2 in enumerate(object_names):
+                    results[obj1][obj2] = [round(sim_matrix[layer][i, j].item(), 5) for layer in range(layer_count)]
+
+            for obj1, result in results.items():
+                fig, ax = plt.subplots(figsize=(12, 7)) # Adjust figsize as needed
+                lines_data = []
+                for obj2, sim_values in result.items():
+                    assert layer_count == len(sim_values), f"Layer count mismatch: {layer_count} != {len(sim_values)}"
+                    line, = ax.plot(range(layer_count), sim_values, '-o', alpha=0.7, color=pairs[obj2]) # Label with object name and color of object
+                    label = f"{obj2} <{toks[obj2]}>"
+                    lines_data.append({
+                    'final_y': sim_values[-1],
+                    'label': f"{obj2}",
+                    'color': pairs[obj2],
+                    'pred': toks[obj2]
+                    })
+                    # texts.append(ax.text(layer_count-1, sim_values[-1], obj2))
+                    # ax.annotate(obj2, xy=(layer_count-1, sim_values[-1]), xytext=(5, 0), textcoords='offset points', va='center')
+
+                sorted_lines = sorted(lines_data, key=lambda x: x['final_y'], reverse=True)
+
+                x_pos = layer_count + 0.5  # Position to the right of the plot
+                y_spacing = 0.05  # Vertical spacing between labels (adjust as needed)
+                y_range = ax.get_ylim()[1] - ax.get_ylim()[0]
+                start_y = ax.get_ylim()[1] - (y_range * 0.05)  # Start near the top
+                
+                # Adds labels
+                for i, line_data in enumerate(sorted_lines):
+                    def bbox(color: str):
+                        if color in ["white", "yellow"]:
+                            return dict(facecolor='black', alpha=0.5, edgecolor='none')
+                        else:
+                            return None
+
+                    y_pos = start_y - (i * y_spacing * y_range)
+                    color = line_data["color"]
+                    ax.text(x_pos, y_pos, line_data['label'], color=line_data["color"], va='center', bbox=bbox(color))
+                    
+                    predcolor = "notacolor"
+                    for col in mcolors.CSS4_COLORS.keys():
+                        if col in line_data['pred']:
+                            predcolor = col
+                            break
+                    ax.text(x_pos + 3, y_pos, f"<{line_data['pred']}>", color="green" if predcolor in color else "red", va='center')
+                
+                    y_pos = start_y - (i * y_spacing * y_range)
+                    ax.plot([layer_count-1, x_pos], [line_data['final_y'], y_pos], linestyle='--', alpha=0.3, color="black")
+
+                ax.set_xlim(0, layer_count + 2.5)
+
+                plt.title(f"{model}, against {obj1} <{toks[obj1]}>")
+                ax.set_xlabel("Layer")
+                ax.set_ylabel("Cosine Similarity")
+                ax.grid(True, linestyle='--', alpha=0.5) # Add a grid
+                # plt.legend()
+                plt.tight_layout()
+                plt.show()
+                # plt.savefig(f"{template(obj="OBJ", query="QRY")}_{model.split('/')[-1]}.png")
+        except KeyboardInterrupt:
+            # skip to next model
+            continue
