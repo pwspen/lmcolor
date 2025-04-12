@@ -2,13 +2,15 @@ Script for comparing similarity of LLM hidden states between different prompts, 
 
 Built on Transformers library, works with any model that has the same hidden state structure as LlamaForCausalLM (most models). Only intended for pretrained (not instruct) models.
 
+Usage: `uv run prompt_hidden_similarity.py`
+
 Example comparing hidden states for prompts P0 and P1:
 
-[sim](examples/sim.png)
+![sim](examples/sim.png)
 
 Less similar prompts show less structured similarity:
 
-[nosim][examples/nosim.png]
+![nosim][examples/nosim.png]
 
 Note magnitude: the least similar that any model+layer gets on the same-structure prompts is about the most similar that any model+layer gets on the different-structure prompts.
 
