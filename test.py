@@ -12,8 +12,16 @@ import numpy as np
 
 
 class TestCase(BaseModel):
-    object: str
+    prompt: str | Callable[[str], str]
+    object: str | None = None
     answer: str
+
+    @property
+    def string(self) -> str:
+        if isinstance(self.prompt, str):
+            return self.prompt
+        elif callable(self.prompt):
+            return self.prompt(self.object)
 
 color_prompts = [
     # lambda obj: f"In a single word, the color that most associated with {obj}s is",
@@ -22,50 +30,54 @@ color_prompts = [
     # lambda obj: f"In a single word, the color that is the most associated with {obj} is",
     # lambda obj: f"In a single word, the color that's most associated with {obj}s is",
     # lambda obj: f"In a single word, the color that most associated with {obj} is",
-    lambda obj: f"The color most associated with {obj}, in a single word:",
+    # lambda obj: f"The color most associated with {obj}, in a single word:",
     # lambda obj: f"The color most strongly associated with {obj}, in a single word:",
     # lambda obj: f"The color most associated with {obj},"
 ]
 
+cprompt = lambda obj: f"The color most associated with {obj}, in a single word:",
+
 color_cases = [
-    TestCase(object="strawberry", answer="red"),
-    TestCase(object="emerald", answer="green"),
-    TestCase(object="flamingo", answer="pink"),
-    TestCase(object="lemon", answer="yellow"),
-    TestCase(object="ruby", answer="red"),
-    TestCase(object="grass", answer="green"),
-    TestCase(object="raven", answer="black"),
-    TestCase(object="carrot", answer="orange"),
-    TestCase(object="banana", answer="yellow"),
-    TestCase(object="pumpkin", answer="orange"),
-    TestCase(object="eggplant", answer="purple"),
-    TestCase(object="cherry", answer="red"),
-    TestCase(object="tomato", answer="red"),
-    TestCase(object="gold", answer="yellow"),
-    TestCase(object="mustard", answer="yellow"),
-    TestCase(object="yolk", answer="yellow"),
-    TestCase(object="blood", answer="red"),
-    TestCase(object="snow", answer="white"),
-    TestCase(object="chocolate", answer="brown"),
-    TestCase(object="peace", answer="white"),
-    TestCase(object="rage", answer="red"),
-    TestCase(object="sapphire", answer="blue"),
-    TestCase(object="lime", answer="green"),
-    TestCase(object="ivory", answer="white"),
-    TestCase(object="jade", answer="green"),
-    TestCase(object="rose", answer="red"),
-    TestCase(object="ocean", answer="blue"),
-    TestCase(object="sky", answer="blue"),
-    TestCase(object="amethyst", answer="purple"),
-    TestCase(object="nature", answer="green"),
-    TestCase(object="denim", answer="blue"),
-    TestCase(object="dandelion", answer="yellow"),
-    TestCase(object="fog", answer="gray"),
-    TestCase(object="frog", answer="green"),
-    TestCase(object="sunflower", answer="yellow"),
-    TestCase(object="brick", answer="red"),
-    TestCase(object="wheat", answer="yellow"),
-    TestCase(object="tangerine", answer="orange"),
+    TestCase(object="a", answer="1", prompt="This is a test of"),
+    TestCase(object="b", answer="2", prompt="Completely dissimlar prompts"),
+    # TestCase(object="raven", answer="black", prompt=cprompt),
+    # TestCase(object="nature", answer="green", prompt=cprompt),
+    # TestCase(object="strawberry", answer="red"),
+    # TestCase(object="emerald", answer="green"),
+    # TestCase(object="flamingo", answer="pink"),
+    # TestCase(object="lemon", answer="yellow"),
+    # TestCase(object="ruby", answer="red"),
+    # TestCase(object="grass", answer="green"),
+    # TestCase(object="carrot", answer="orange"),
+    # TestCase(object="banana", answer="yellow"),
+    # TestCase(object="pumpkin", answer="orange"),
+    # TestCase(object="eggplant", answer="purple"),
+    # TestCase(object="cherry", answer="red"),
+    # TestCase(object="tomato", answer="red"),
+    # TestCase(object="gold", answer="yellow"),
+    # TestCase(object="mustard", answer="yellow"),
+    # TestCase(object="yolk", answer="yellow"),
+    # TestCase(object="blood", answer="red"),
+    # TestCase(object="snow", answer="white"),
+    # TestCase(object="chocolate", answer="brown"),
+    # TestCase(object="peace", answer="white"),
+    # TestCase(object="rage", answer="red"),
+    # TestCase(object="sapphire", answer="blue"),
+    # TestCase(object="lime", answer="green"),
+    # TestCase(object="ivory", answer="white"),
+    # TestCase(object="jade", answer="green"),
+    # TestCase(object="rose", answer="red"),
+    # TestCase(object="ocean", answer="blue"),
+    # TestCase(object="sky", answer="blue"),
+    # TestCase(object="amethyst", answer="purple"),
+    # TestCase(object="denim", answer="blue"),
+    # TestCase(object="dandelion", answer="yellow"),
+    # TestCase(object="fog", answer="gray"),
+    # TestCase(object="frog", answer="green"),
+    # TestCase(object="sunflower", answer="yellow"),
+    # TestCase(object="brick", answer="red"),
+    # TestCase(object="wheat", answer="yellow"),
+    # TestCase(object="tangerine", answer="orange"),
 ]
 
 
@@ -87,7 +99,8 @@ def evaluate(prompts: list[Callable[[str], str]], cases: list[TestCase], model: 
         prompt_res: dict = results[prompt("<OBJ>")]
         
         for test in cases:
-            input_ids = tokenizer.encode(prompt(test.object), return_tensors="pt").to(device)
+            input_ids = tokenizer.encode(test.string, return_tensors="pt").to(device)
+            print(input_ids)
             success = 0
             if test.answer not in hiddens.keys():
                 hiddens[test.answer] = []
@@ -176,9 +189,6 @@ def compute_group_similarities(groups_dict, verbose=False):
                     # Store in similarity matrix (symmetrically)
                     similarity_matrix[layer, i, j] = sim
                     similarity_matrix[layer, j, i] = sim  # Symmetric matrix
-
-                    if verbose and layer == 0:  # Only print for first layer to avoid excessive output
-                        print(f"Layer {layer}, {name_i} vs {name_j}: {sim:.4f}")
                 
     return similarity_matrix, group_names
 
@@ -212,19 +222,29 @@ def plot_similarity_matrix(similarity_matrix, group_names):
     return plt.gcf()
 
 if __name__ == "__main__":
-    models = ("HuggingFaceTB/SmolLM2-135M", "HuggingFaceTB/SmolLM2-360M", "HuggingFaceTB/SmolLM2-1.7B")
-    last = None
-    for model in models:
-        hs = evaluate(color_prompts, color_cases, model=model, attempts=1)
+    smollm = ("HuggingFaceTB/SmolLM2-135M", "HuggingFaceTB/SmolLM2-360M", "HuggingFaceTB/SmolLM2-1.7B")
+
+    qwen = ["Qwen/Qwen2-1.5B"]
+
+    min_len = 1
+    for model in qwen:
+        print(model)
+        hs = evaluate(color_prompts, color_cases, model=model, attempts=1, verbose=True)
+        print(f"Colors: {len(hs)}")
+        for name in list(hs.keys()):
+            hlist = hs[name]
+            # Remove small groups
+            # This is broken by attemps > 1
+            if len(hlist) < min_len:
+                hs.pop(name)
+        print(f"Colors after filtering: {len(hs)}")
         sim_matrix, names = compute_group_similarities(hs)
-        if last:
-            print(last == sim_matrix)
-            last = sim_matrix
+
         print(len(sim_matrix))
         avgs = []
         for i in range(len(sim_matrix)):
             # print(sim_matrix[i])
-            self_avg = sim_matrix[i].diagonal().mean().item()
+            self_avg = sim_matrix[i].mean().item()
             # print(f"Layer {i} self avg: {self_avg:.2f}")
             avgs.append(self_avg)
         plt.scatter(range(len(avgs)), avgs)
