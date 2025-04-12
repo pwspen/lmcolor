@@ -1,14 +1,10 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.models.llama.modeling_llama import LlamaForCausalLM, LlamaDecoderLayer, LlamaMLP
 import torch
-import json
-from pydantic import BaseModel
-from collections import defaultdict
-from typing import Callable
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
+import argparse
+
 
  
 
@@ -92,13 +88,25 @@ def compute_group_similarities(hiddens: dict[str, list[torch.Tensor]]):
 if __name__ == "__main__":
     test_models = ["Qwen/Qwen2-1.5B", "HuggingFaceTB/SmolLM2-360M", "HuggingFaceTB/SmolLM2-1.7B", "meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-3B", "google/gemma-3-1b-pt"]
 
-    prompt = lambda obj: f"The color most associated with {obj}, in a single word:"
+    template = lambda obj: f"The color most associated with {obj}, in a single word:"
 
     cases = [ # Prompts to compare similarity
-        prompt("gold"),
-        prompt("banana")
+        template("gold"),
+        template("banana")
     ]
 
+    parser = argparse.ArgumentParser(description="Compute hidden state similarity between prompts")
+    parser.add_argument("--prompts", nargs="+", default=None)
+    args = parser.parse_args()
+    if args.prompts is not None:
+        cases = args.prompts
+
+    if len(cases) < 2:
+        raise ValueError("At least 2 prompts required")
+    
+    if len(cases) > 2:
+        print("Warning: results are less meaningful for n_prompts > 2\n\n")
+    
     for model in test_models:
         hiddens, tok = gen_token_with_hiddens(model=model, cases=cases)
         sim_matrix, names = compute_group_similarities(hiddens)
