@@ -12,7 +12,7 @@ import numpy as np
 
 
 class TestCase(BaseModel):
-    prompt: str | Callable[[str], str]
+    prompt: str | Callable
     object: str | None = None
     answer: str
 
@@ -35,13 +35,15 @@ color_prompts = [
     # lambda obj: f"The color most associated with {obj},"
 ]
 
-cprompt = lambda obj: f"The color most associated with {obj}, in a single word:",
+cprompt = lambda obj: f"The color most associated with {obj}, in a single word:"
 
 color_cases = [
-    TestCase(object="a", answer="1", prompt="This is a test of"),
-    TestCase(object="b", answer="2", prompt="Completely dissimlar prompts"),
-    # TestCase(object="raven", answer="black", prompt=cprompt),
-    # TestCase(object="nature", answer="green", prompt=cprompt),
+    # TestCase(object="a", answer="1", prompt="desert"),
+    # TestCase(object="b", answer="2", prompt="dessert"),
+    # TestCase(object="b", answer="2", prompt="El color más asociado con el cuervo, en una sola palabra"),
+    #TestCase(object="c", answer="3", prompt="On weekends I like to go to the beach and"),
+    TestCase(object="raven", answer="black", prompt=cprompt),
+    TestCase(object="nature", answer="green", prompt=cprompt),
     # TestCase(object="strawberry", answer="red"),
     # TestCase(object="emerald", answer="green"),
     # TestCase(object="flamingo", answer="pink"),
@@ -90,59 +92,45 @@ def evaluate(prompts: list[Callable[[str], str]], cases: list[TestCase], model: 
     
     results = {}
     per_object_stats = defaultdict(int)  # Track per-object stats
-    total_attempts_per_object = len(prompts) * attempts  # Total attempts for each object
     best = 0
     best_text = ''
     hiddens = {}
-    for prompt in prompts:
-        results[prompt("<OBJ>")] = {}
-        prompt_res: dict = results[prompt("<OBJ>")]
-        
-        for test in cases:
-            input_ids = tokenizer.encode(test.string, return_tensors="pt").to(device)
-            print(input_ids)
-            success = 0
-            if test.answer not in hiddens.keys():
-                hiddens[test.answer] = []
+    
+    for test in cases:
+        input_ids = tokenizer.encode(test.string, return_tensors="pt").to(device)
+        print(input_ids)
+        success = 0
+        if test.answer not in hiddens.keys():
+            hiddens[test.answer] = []
 
-            for i in range(attempts):
-                # Generate only the next token
-                with torch.no_grad():
-                    outputs = model.generate(
-                        input_ids,
-                        max_new_tokens=1,
-                        do_sample=True,
-                        pad_token_id=tokenizer.eos_token_id,
-                        output_hidden_states=True,
-                        return_dict_in_generate=True
-                    )
-                    # [batch, layer]
-                    # includes all tokens
-                    all_layers_hidden = [layer_output[0, -1, :] for layer_output in outputs.hidden_states[0]]
+        for i in range(attempts):
+            # Generate only the next token
+            with torch.no_grad():
+                outputs = model.generate(
+                    input_ids,
+                    max_new_tokens=1,
+                    do_sample=True,
+                    pad_token_id=tokenizer.eos_token_id,
+                    output_hidden_states=True,
+                    return_dict_in_generate=True
+                )
+                # [batch, layer]
+                # includes all tokens
+                all_layers_hidden = [layer_output[0, -1, :] for layer_output in outputs.hidden_states[0]]
 
-                    hiddens[test.answer].append(all_layers_hidden)
+                hiddens[test.answer].append(all_layers_hidden)
 
-                # Get only the new token ID
-                new_token = outputs.sequences[0, -1].unsqueeze(0)
-                new_text = tokenizer.decode(new_token, skip_special_tokens=True)
-                
-                if test.answer.lower() in new_text.lower():
-                    success += 1
-                    per_object_stats[test.object] += 1  # Increment total success for this object
-                
-            prompt_res[test.object] = success
+            # Get only the new token ID
+            new_token = outputs.sequences[0, -1].unsqueeze(0)
+            new_text = tokenizer.decode(new_token, skip_special_tokens=True)
             
-        avg = round(sum(prompt_res.values()) / len(prompt_res.values()), 2)
-        if verbose:
-            print(f"Prompt: {prompt('<OBJ>')}, Success rate: {avg}")
-        prompt_res["avg"] = avg
-        
-        if avg > best:
-            best = avg
-            best_text = prompt("<OBJ>")
+            if test.answer.lower() in new_text.lower():
+                success += 1
+                per_object_stats[test.object] += 1  # Increment total success for this object
+    
 
     # Calculate per-object success rates
-    per_object_success_rates = {obj: round(successes / total_attempts_per_object, 2) 
+    per_object_success_rates = {obj: round(successes / attempts, 2) 
                               for obj, successes in per_object_stats.items()}
 
     if verbose:
@@ -222,12 +210,12 @@ def plot_similarity_matrix(similarity_matrix, group_names):
     return plt.gcf()
 
 if __name__ == "__main__":
-    smollm = ("HuggingFaceTB/SmolLM2-135M", "HuggingFaceTB/SmolLM2-360M", "HuggingFaceTB/SmolLM2-1.7B")
+    smollm = ["HuggingFaceTB/SmolLM2-135M", "HuggingFaceTB/SmolLM2-360M", "HuggingFaceTB/SmolLM2-1.7B"]
 
-    qwen = ["Qwen/Qwen2-1.5B"]
+    test = ["Qwen/Qwen2-1.5B", "HuggingFaceTB/SmolLM2-360M", "HuggingFaceTB/SmolLM2-1.7B", "meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-3B", "google/gemma-3-1b-pt"]
 
     min_len = 1
-    for model in qwen:
+    for model in test:
         print(model)
         hs = evaluate(color_prompts, color_cases, model=model, attempts=1, verbose=True)
         print(f"Colors: {len(hs)}")
@@ -247,8 +235,9 @@ if __name__ == "__main__":
             self_avg = sim_matrix[i].mean().item()
             # print(f"Layer {i} self avg: {self_avg:.2f}")
             avgs.append(self_avg)
-        plt.scatter(range(len(avgs)), avgs)
+        plt.scatter(range(len(avgs)), avgs, label=model.split("/")[-1])
         plt.plot(range(len(avgs)), avgs, '-', alpha=0.7)
-        plt.xlabel("Layer")
-        plt.ylabel("Average In-Group Cosine Similarity")
-        plt.show()
+    plt.legend()
+    plt.xlabel("Layer")
+    plt.ylabel("Average In-Group Cosine Similarity")
+    plt.show()
